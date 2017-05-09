@@ -1,6 +1,9 @@
 import best
 import best.plot
 from pymc import MCMC
+import matplotlib.pyplot as plt
+from matplotlib import rc
+rc('text', usetex=True)
 
 # This example reproduces Figure 3 of
 #
@@ -19,10 +22,13 @@ placebo = (99,101,100,101,102,100,97,101,104,101,102,102,100,105,88,101,100,
 
 data = {'drug':drug,'placebo':placebo}
 
-model = best.make_model( data )
+model = best.make_model(data)
 
 M = MCMC(model)
 M.sample(iter=110000, burn=10000)
 
 fig = best.plot.make_figure(M)
-fig.savefig('smart_drug.png',dpi=70)
+
+plt.show()
+
+# fig.savefig('smart_drug.png',dpi=70)

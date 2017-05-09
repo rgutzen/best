@@ -59,7 +59,7 @@ def plot_posterior( sample_vec, bins=None, ax=None, title=None, stat='mode',
                  verticalalignment='bottom',
                  )
 
-        ax.text( (hdi_min+hdi_max)/2, 0.14, '95% HDI',
+        ax.text( (hdi_min+hdi_max)/2, 0.14, '95\% HDI',
                  transform=trans,
                  horizontalalignment='center',
                  verticalalignment='bottom',
@@ -75,6 +75,7 @@ def plot_posterior( sample_vec, bins=None, ax=None, title=None, stat='mode',
         for line in ax.get_xticklines():
             line.set_marker(mpllines.TICKDOWN)
         ax.set_xlabel(label)
+
 
 def plot_data_and_prediction( data, means, stds, numos, ax=None, bins=None,
                               n_curves=50, group='x'):
@@ -108,17 +109,43 @@ def plot_data_and_prediction( data, means, stds, numos, ax=None, bins=None,
         v = np.exp([noncentral_t_like(xi,m,lam,nu) for xi in x])
         ax.plot(x,v, color=pretty_blue, zorder=-10)
 
-    ax.text(0.8,0.95,'$\mathrm{N}_{%s}=%d$'%( group, len(data), ),
+    ax.text(0.95,0.95,'$\mathrm{N}_{%s}=%d$'%( group, len(data), ),
             transform=ax.transAxes,
-            horizontalalignment='left',
+            horizontalalignment='right',
             verticalalignment='top'
             )
     ax.xaxis.set_major_locator( mticker.MaxNLocator(nbins=4) )
     ax.yaxis.set_major_locator( mticker.MaxNLocator(nbins=4) )
     ax.set_title('Data Group %s w. Post. Pred.'%(group,))
 
-def make_figure(M, n_bins=30, group1_name='Group 1', group2_name='Group 2'):
+
+def make_figure(M, n_bins=30):
     # plotting stuff
+    # ToDo: Enable separate normality plotting!
+
+    param_names = []
+
+    for node in M.nodes:
+        param_names += [node.__name__]
+
+    for key in param_names:
+        if key[:2] == "1~":
+            group1_name = key[2:]
+        if key[:2] == "2~":
+            group2_name = key[2:]
+
+    group1_data = M.get_node("1~" + group1_name).value
+    group2_data = M.get_node("2~" + group2_name).value
+
+    N1 = len(group1_data)
+    N2 = len(group2_data)
+
+    if "nu1_minus_one" in param_names:
+        separate_nu = True
+        pn = 6
+    else:
+        separate_nu = False
+        pn = 5
 
     posterior_mean1 = M.trace('group1_mean')[:]
     posterior_mean2 = M.trace('group2_mean')[:]
@@ -134,68 +161,92 @@ def make_figure(M, n_bins=30, group1_name='Group 1', group2_name='Group 2'):
     posterior_stds = np.concatenate( (posterior_std1,posterior_std2) )
     _, bin_edges_stds = np.histogram( posterior_stds, bins=n_bins )
 
-    effect_size = diff_means / np.sqrt((posterior_std1**2+posterior_std2**2)/2)
+    pooled_var = ((N1-1)*posterior_std1**2 + (N2-1)*posterior_std2**2) / (N1+N2-2)
+    effect_size = diff_means / np.sqrt(pooled_var)
 
-    post_nu_minus_one = M.trace('nu_minus_one')[:]
-    lognup = np.log10(post_nu_minus_one+1)
+    if separate_nu:
+        post_nu1_minus_one = M.trace('nu1_minus_one')[:]
+        post_nu2_minus_one = M.trace('nu2_minus_one')[:]
+        lognu1p = np.log10(post_nu1_minus_one + 1)
+        lognu2p = np.log10(post_nu2_minus_one + 1)
+        diff_lognup = lognu1p - lognu2p
+        posterior_nus = np.concatenate((lognu1p, lognu2p))
+        _, bin_edges_nus = np.histogram(posterior_nus, bins=n_bins)
+    else:
+        post_nu1_minus_one = M.trace('nu_minus_one')[:]
+        post_nu2_minus_one = post_nu1_minus_one
+        lognu1p = np.log10(post_nu1_minus_one+1)
+        bin_edges_nus = n_bins
 
-    f = plt.figure(figsize=(8.2,11),facecolor='white')
-    ax1 = f.add_subplot(5,2,1,axisbg='none')
+    f = plt.figure(figsize=(8.2,1 + 2*pn),facecolor='white')
+    ax1 = f.add_subplot(pn,2,1,axisbg='none')
     plot_posterior( posterior_mean1, bins=bin_edges_means, ax=ax1,
                     title='%s Mean' % group1_name, stat='mean',
                     label=r'$\mu_1$')
 
-    ax3 = f.add_subplot(5,2,3,axisbg='none')
+    ax3 = f.add_subplot(pn,2,3,axisbg='none')
     plot_posterior( posterior_mean2, bins=bin_edges_means, ax=ax3,
                     title='%s Mean' % group2_name, stat='mean',
                     label=r'$\mu_2$')
 
-    ax5 = f.add_subplot(5,2,5,axisbg='none')
+    ax5 = f.add_subplot(pn,2,5,axisbg='none')
     plot_posterior( posterior_std1, bins=bin_edges_stds, ax=ax5,
                     title='%s Std. Dev.' % group1_name,
                     label=r'$\sigma_1$')
 
-
-    ax7 = f.add_subplot(5,2,7,axisbg='none')
+    ax7 = f.add_subplot(pn,2,7,axisbg='none')
     plot_posterior( posterior_std2, bins=bin_edges_stds, ax=ax7,
                     title='%s Std. Dev.' % group2_name,
                     label=r'$\sigma_2$')
 
-    ax9 = f.add_subplot(5,2,9,axisbg='none')
-    plot_posterior( lognup, bins=n_bins, ax=ax9,
-                    title='Normality',
-                    label=r'$\mathrm{log10}(\nu)$')
+    ax9 = f.add_subplot(pn, 2, 9, axisbg='none')
+    plot_posterior(lognu1p, bins=bin_edges_nus, ax=ax9,
+                   title='{} Normality'
+                   .format(group1_name if separate_nu else ''),
+                   label=r'$\mathrm{}(\nu{})$'
+                   .format('{log10}', '_1' if separate_nu else ''))
 
-    ax6 = f.add_subplot(5,2,6,axisbg='none')
+    if separate_nu:
+        ax11 = f.add_subplot(pn, 2, 11, axisbg='none')
+        plot_posterior(lognu2p, bins=bin_edges_nus, ax=ax11,
+                       title='{} Normality'.format(group2_name),
+                       label=r'$\mathrm{log10}(\nu_2)$')
+
+        ax12 = f.add_subplot(pn, 2, 12, axisbg='none')
+        plot_posterior(diff_lognup, bins=n_bins, ax=ax12,
+                       title='Normality Difference',
+                       draw_zero=True,
+                       label=r'$\mathrm{log10}(\nu_1)-\mathrm{log10}(\nu_2)$')
+
+    ax6 = f.add_subplot(pn,2,6,axisbg='none')
     plot_posterior( diff_means, bins=n_bins, ax=ax6,
                     title='Difference of Means',
                     stat='mean',
                     draw_zero=True,
                     label=r'$\mu_1 - \mu_2$')
 
-    ax8 = f.add_subplot(5,2,8,axisbg='none')
+    ax8 = f.add_subplot(pn,2,8,axisbg='none')
     plot_posterior( diff_stds, bins=n_bins, ax=ax8,
                     title='Difference of Std. Dev.s',
                     draw_zero=True,
                     label=r'$\sigma_1 - \sigma_2$')
 
-    ax10 = f.add_subplot(5,2,10,axisbg='none')
+    ax10 = f.add_subplot(pn,2,10,axisbg='none')
     plot_posterior( effect_size, bins=n_bins, ax=ax10,
                     title='Effect Size',
                     draw_zero=True,
-                    label=r'$(\mu_1 - \mu_2)/\sqrt{(\sigma_1 + \sigma_2)/2}$')
+                    label=r'$(\mu_1 - \mu_2)/\sqrt{((N_1-1)\sigma_1^2 + (N_2-1)\sigma_2^2)/(N_1+N_2-2)}$')
 
-    orig_vals = np.concatenate( (M.group1.value, M.group2.value) )
+    orig_vals = np.concatenate( (group1_data, group2_data) )
     bin_edges = np.linspace( np.min(orig_vals), np.max(orig_vals), 30 )
 
-    ax2 = f.add_subplot(5,2,2,axisbg='none')
-    plot_data_and_prediction(M.group1.value, posterior_mean1, posterior_std1,
-                             post_nu_minus_one, ax=ax2, bins=bin_edges, group=group1_name)
+    ax2 = f.add_subplot(pn,2,2,axisbg='none')
+    plot_data_and_prediction(group1_data, posterior_mean1, posterior_std1,
+                             post_nu1_minus_one, ax=ax2, bins=bin_edges, group=group1_name)
 
-    ax4 = f.add_subplot(5,2,4,axisbg='none',sharex=ax2,sharey=ax2)
-    plot_data_and_prediction(M.group2.value, posterior_mean2, posterior_std2,
-                             post_nu_minus_one, ax=ax4, bins=bin_edges, group=group2_name)
-
+    ax4 = f.add_subplot(pn,2,4,axisbg='none',sharex=ax2,sharey=ax2)
+    plot_data_and_prediction(group2_data, posterior_mean2, posterior_std2,
+                             post_nu2_minus_one, ax=ax4, bins=bin_edges, group=group2_name)
 
     f.subplots_adjust(hspace=0.82,top=0.97,bottom=0.06,
                       left=0.09, right=0.95, wspace=0.45)

@@ -16,7 +16,7 @@ from pymc import Uniform, Normal, Exponential, NoncentralT, deterministic, Model
 import numpy as np
 import scipy.stats
 
-def make_model(data):
+def make_model(data, separate_nu=False):
     assert len(data)==2, 'There must be exactly two data arrays'
 
     name1, name2 = sorted(data.keys())
@@ -39,29 +39,64 @@ def make_model(data):
     group2_mean = Normal('group2_mean', mu_m, mu_p )
     group1_std = Uniform('group1_std', sigma_low, sigma_high)
     group2_std = Uniform('group2_std', sigma_low, sigma_high)
-    nu_minus_one = Exponential('nu_minus_one', 1/29)
+    if separate_nu:
+        nu1_minus_one = Exponential('nu1_minus_one', 1/29)
+        nu2_minus_one = Exponential('nu2_minus_one', 1/29)
 
-    @deterministic(plot=False)
-    def nu(n=nu_minus_one):
-        out = n+1
-        return out
+        @deterministic(plot=False)
+        def nu1(n=nu1_minus_one):
+            out = n + 1
+            return out
+
+        @deterministic(plot=False)
+        def nu2(n=nu2_minus_one):
+            out = n + 1
+            return out
+    else:
+        nu_minus_one = Exponential('nu_minus_one', 1/29)
+
+        @deterministic(plot=False)
+        def nu(n=nu_minus_one):
+            out = n + 1
+            return out
 
     @deterministic(plot=False)
     def lam1(s=group1_std):
         out = 1/s**2
         return out
+
     @deterministic(plot=False)
     def lam2(s=group2_std):
         out = 1/s**2
         return out
 
-    group1 = NoncentralT(name1, group1_mean, lam1, nu, value=y1, observed=True)
-    group2 = NoncentralT(name2, group2_mean, lam2, nu, value=y2, observed=True)
-    return Model({'group1':group1,
-                  'group2':group2,
-                  'group1_mean':group1_mean,
-                  'group2_mean':group2_mean,
-                  })
+    if separate_nu:
+        group1 = NoncentralT("1~" + name1, group1_mean, lam1, nu1, value=y1, observed=True)
+        group2 = NoncentralT("2~" + name2, group2_mean, lam2, nu2, value=y2, observed=True)
+
+        return Model({'group1': group1,
+                      'group2': group2,
+                      'group1_mean': group1_mean,
+                      'group2_mean': group2_mean,
+                      'group1_std': group1_std,
+                      'group2_std': group2_std,
+                      'nu1_minus_one': nu1_minus_one,
+                      'nu2_minus_one': nu2_minus_one,
+                      })
+
+    else:
+        group1 = NoncentralT("1~" + name1, group1_mean, lam1, nu, value=y1, observed=True)
+        group2 = NoncentralT("2~" + name2, group2_mean, lam2, nu, value=y2, observed=True)
+
+        return Model({'group1': group1,
+                      'group2': group2,
+                      'group1_mean': group1_mean,
+                      'group2_mean': group2_mean,
+                      'group1_std': group1_std,
+                      'group2_std': group2_std,
+                      'nu_minus_one': nu_minus_one,
+                      })
+
 
 def hdi_of_mcmc( sample_vec, cred_mass = 0.95 ):
     assert len(sample_vec), 'need points to find HDI'
